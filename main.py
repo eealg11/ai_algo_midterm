@@ -3,88 +3,149 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 
 app = Flask(__name__)
-# GAS 및 프론트엔드 연동을 위한 CORS 허용
-CORS(app)
+CORS(app)  # GAS 및 웹 클라이언트와의 통신을 위한 CORS 허용
 
-
+# 고정 길이 큐 클래스 정의
 class FixedSizeQueue:
-  """최대 크기가 고정된 큐(Fixed-Size Queue) 클래스.
+    def __init__(self, capacity=5):
+        self.capacity = int(capacity)
+        self.queue = [None] * self.capacity
+        self.front = 0
+        self.rear = -1
+        self.size = 0
 
-  크기가 가득 차면 가장 오래된 항목(FIFO)이 제거되고 새 항목이 추가됩니다.
-  """
+    def is_empty(self):
+        return self.size == 0
 
-  def __init__(self, capacity: int = 5):
-    self.capacity = capacity
-    self.queue = []
+    def is_full(self):
+        return self.size == self.capacity
 
-  def enqueue(self, item):
-    """큐에 데이터를 삽입합니다.
+    def initialize(self, capacity=5):
+        """1. 초기화"""
+        self.capacity = int(capacity)
+        self.queue = [None] * self.capacity
+        self.front = 0
+        self.rear = -1
+        self.size = 0
+        return f"큐가 용량 {self.capacity}로 초기화되었습니다."
 
-    용량이 가득 찬 경우 가장 먼저 들어온 데이터를 제거(Overflow 처리)합니다.
-    """
-    status_msg = ""
-    if len(self.queue) >= self.capacity:
-      removed = self.queue.pop(0)
-      status_msg = f"큐 용량({self.capacity}) 초과로 가장 오래된 항목 '{removed}'이(가) 제거되었습니다."
-    else:
-      status_msg = f"항목 '{item}'이(가) 큐에 정상적으로 추가되었습니다."
+    def push(self, item):
+        """2. push (Enqueue)"""
+        if self.is_full():
+            raise OverflowError("큐가 가득 찼습니다 (Overflow).")
+        self.rear = (self.rear + 1) % self.capacity
+        self.queue[self.rear] = item
+        self.size += 1
+        return item
 
-    self.queue.append(item)
-    return status_msg
+    def pop(self):
+        """2. pop (Dequeue)"""
+        if self.is_empty():
+            raise IndexError("큐가 비어 있습니다 (Underflow).")
+        item = self.queue[self.front]
+        self.queue[self.front] = None
+        self.front = (self.front + 1) % self.capacity
+        self.size -= 1
+        return item
 
-  def get_state(self):
-    """현재 큐의 상태와 복잡도 정보를 반환합니다."""
-    return {
-        "queue": list(self.queue),
-        "capacity": self.capacity,
-        "size": len(self.queue),
-        "is_full": len(self.queue) >= self.capacity,
-        # 시간 복잡도: 삽입 O(N) [파이썬 리스트 pop(0) 기준], 조회 O(1)
-        # 공간 복잡도: O(Capacity)
-        "complexity": {
-            "time_enqueue": "O(N) (리스트 앞단 삭제 시 이동 발생)",
-            "time_peek_or_view": "O(1)",
-            "space": f"O({self.capacity}) (고정 크기 제한)",
-        },
-    }
+    def get_size(self):
+        """3, 8. 현재 데이터 개수(길이/크기) 반환"""
+        return self.size
 
+    def check_status(self):
+        """4. 상태 검사 (full/empty)"""
+        return {"is_full": self.is_full(), "is_empty": self.is_empty()}
 
-# 기본 용량이 5인 고정 길이 큐 인스턴스 생성
-fixed_queue = FixedSizeQueue(capacity=5)
+    def peek_front(self):
+        """5. 전면(Front) 데이터 확인"""
+        if self.is_empty():
+            return None
+        return self.queue[self.front]
 
+    def clear(self):
+        """6. 큐 전체 데이터 삭제"""
+        for i in range(self.capacity):
+            self.queue[i] = None
+        self.front = 0
+        self.rear = -1
+        self.size = 0
+        return "큐가 전체 삭제되었습니다."
+
+    def search_index(self, item):
+        """7. 값의 index 검색 (큐 내부 논리적 순서 기준)"""
+        for i in range(self.size):
+            idx = (self.front + i) % self.capacity
+            if self.queue[idx] == item:
+                return i  # Front로부터의 상대적 위치 반환
+        return -1
+
+    def contains(self, item):
+        """9. 값의 존재 여부 검사"""
+        return self.search_index(item) != -1
+
+    def print_queue(self):
+        """10. Front부터 Rear 까지 출력"""
+        result = []
+        for i in range(self.size):
+            idx = (self.front + i) % self.capacity
+            result.append(self.queue[idx])
+        return result
+
+# 기본 큐 인스턴스 생성 (기본 용량: 5)
+q = FixedSizeQueue(5)
 
 @app.route("/", methods=["GET"])
-def health_check():
-  """서버 상태 확인용 엔드포인트"""
-  return jsonify({
-      "status": "healthy",
-      "message": "고정 길이 큐 클라우드 런 서버가 정상 작동 중입니다.",
-  })
-
-
-@app.route("/queue", methods=["GET"])
-def get_queue():
-  """현재 고정 길이 큐의 상태 및 복잡도를 조회합니다."""
-  return jsonify(fixed_queue.get_state())
-
+def home():
+    return jsonify({"status": "Cloud Run Fixed-Size Queue Server is running!"})
 
 @app.route("/queue", methods=["POST"])
-def enqueue_item():
-  """고정 길이 큐에 새로운 데이터를 추가합니다."""
-  data = request.get_json() or {}
-  item = data.get("item")
+def handle_queue():
+    data = request.json or {}
+    action = data.get("action")
+    value = data.get("value")
+    capacity = data.get("capacity", 5)
 
-  if not item:
-    return jsonify({"error": "추가할 항목('item')이 제공되지 않았습니다."}), 400
+    try:
+        if action == "init":
+            msg = q.initialize(capacity)
+        elif action == "push":
+            if value is None:
+                return jsonify({"error": "추가할 값이 없습니다."}), 400
+            q.push(value)
+            msg = f"'{value}' 푸시 성공"
+        elif action == "pop":
+            popped = q.pop()
+            msg = f"'{popped}' 팝 성공"
+        elif action == "size":
+            msg = q.get_size()
+        elif action == "status":
+            msg = q.check_status()
+        elif action == "front":
+            msg = q.peek_front()
+        elif action == "clear":
+            msg = q.clear()
+        elif action == "search":
+            msg = q.search_index(value)
+        elif action == "contains":
+            msg = q.contains(value)
+        elif action == "print":
+            msg = q.print_queue()
+        else:
+            return jsonify({"error": "지원하지 않는 액션입니다."}), 400
 
-  action_msg = fixed_queue.enqueue(item)
-  response_data = fixed_queue.get_state()
-  response_data["action_message"] = action_msg
-
-  return jsonify(response_data)
-
+        return jsonify({
+            "success": True,
+            "message": msg,
+            "queue_state": q.print_queue(),
+            "front": q.front,
+            "rear": q.rear,
+            "size": q.size,
+            "capacity": q.capacity,
+            "status": q.check_status()
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 400
 
 if __name__ == "__main__":
-  # Cloud Run 환경 변수 PORT를 지원하며, 기본값은 8080입니다.
-  port = int(os.environ.get("PORT", 8080))
-  app.run(host="0.0.0.0", port=port)
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
